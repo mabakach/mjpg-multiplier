@@ -6,8 +6,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,13 +27,15 @@ import jakarta.annotation.PostConstruct;
 @Component
 public class MjpegInputStreamReaderComponent {
 
+	private static final int DATA_BUFFER_SIZE = 1024 * 1024;
+	
 	@Autowired
 	private ImageQueueHolderComponent imageQueueHolder;
 
 	@Autowired
 	private HttpInputStreamProvider httpInputStreamProvider;
 
-	private ByteArrayOutputStream baos = new ByteArrayOutputStream(1020 * 1024);
+	private ByteArrayOutputStream baos = new ByteArrayOutputStream(DATA_BUFFER_SIZE);
 
 	private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
@@ -75,8 +79,7 @@ public class MjpegInputStreamReaderComponent {
 		final String contentLengthPropery = "Content-Length:";
 		final int frameStart = data.indexOf(contentLengthPropery);
 		if (frameStart > 0) {
-			final String contentLengthString = data.substring(frameStart + contentLengthPropery.length(),
-					data.indexOf("\r\n", frameStart));
+			final String contentLengthString = data.substring(frameStart + contentLengthPropery.length(), data.indexOf("\r\n", frameStart));
 			int contentLength = -1;
 			try {
 				contentLength = Integer.parseInt(contentLengthString.trim());
@@ -84,40 +87,22 @@ public class MjpegInputStreamReaderComponent {
 				LOGGER.warn("Could not parse content length: " + contentLength);
 			}
 			if (contentLength > 0) {
-				final int imageDataStart = frameStart + contentLengthPropery.length() + contentLengthString.length()
-						+ 4;
+				final int imageDataStart = frameStart + contentLengthPropery.length() + contentLengthString.length() + 4;
 				if (baos.size() >= imageDataStart + contentLength) {
 					// at least one image in the cache
-					byte[] bytes = baos.toByteArray();
-					final ByteArrayInputStream bais = new ByteArrayInputStream(bytes, imageDataStart, contentLength);
-					try {
-						BufferedInputStream bis = new BufferedInputStream(bais);
-						int n = bis.available();
-						byte[] imageBytes = new byte[n];
-						bis.read(imageBytes, 0, n);
-						for (final BlockingQueue<BufferedImage> imageQueue : new ArrayList<>(
-								imageQueueHolder.getImageQueueList())) {
-							// new image instance for every queue
-							bais.reset();
-							final BufferedImage bufferedImage = ImageIO.read(bais);
-							if (bufferedImage != null) {
-								imageQueue.add(bufferedImage);
-								while (imageQueue.size() > 30) {
-									imageQueue.poll();
-								}
-							} else {
-								LOGGER.warn("Image is null");
-							}
+					final byte[] bytes = baos.toByteArray();
+					final byte[] imageBytes = Arrays.copyOfRange(bytes, imageDataStart, contentLength);
+					for (final BlockingQueue<byte[]> imageQueue : new ArrayList<>(imageQueueHolder.getImageQueueList())) {
+						// new image instance for every queue
+						imageQueue.add(imageBytes);
+						while (imageQueue.size() > 30) {
+							imageQueue.poll();
 						}
-
-					} catch (IOException e) {
-						LOGGER.warn("Could not parse image data", e);
-					} finally {
-						// reset baos
-						baos = new ByteArrayOutputStream(1020 * 1024);
-						baos.write(bytes, imageDataStart + contentLength,
-								bytes.length - (imageDataStart + contentLength));
 					}
+
+					// reset baos
+					baos = new ByteArrayOutputStream(DATA_BUFFER_SIZE);
+					baos.write(bytes, imageDataStart + contentLength, bytes.length - (imageDataStart + contentLength));
 				}
 			}
 		}

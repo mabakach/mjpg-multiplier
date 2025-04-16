@@ -40,7 +40,7 @@ public class StreamController {
 
 	@GetMapping(value = "/stream.mjpg", produces = "multipart/x-mixed-replace; boundary=FRAME")
 	public ResponseEntity<StreamingResponseBody> sendStream() {
-		final BlockingQueue<BufferedImage> imageQueue = new LinkedBlockingDeque<>();
+		final BlockingQueue<byte[]> imageQueue = new LinkedBlockingDeque<>();
 		imageQueueHolder.addImageQueueList(imageQueue);
 
 		final StreamingResponseBody bodyStream =  new StreamingResponseBody() {
@@ -48,17 +48,13 @@ public class StreamController {
 			public void writeTo(OutputStream outputStream) throws IOException {
 				while (true) {
 					try {
-						final BufferedImage image = imageQueue.take();
-						if (image != null) {
+						final byte[] imageData = imageQueue.take();
+						if (imageData != null) {
 							outputStream.write("--FRAME\r\n".getBytes());
 							try {
-								final ByteArrayOutputStream bos = new ByteArrayOutputStream(
-										image.getWidth() * image.getHeight());
-								ImageIO.write(image, "jpg", bos);
-								final byte[] byteArrayToSend = bos.toByteArray();
 								outputStream.write("Content-Type: image/jpeg\r\n".getBytes());
-								outputStream.write(String.format("Content-Length: %d\r\n\r\n\r\n)", byteArrayToSend.length).getBytes());
-								outputStream.write(byteArrayToSend);
+								outputStream.write(String.format("Content-Length: %d\r\n\r\n", imageData.length).getBytes());
+								outputStream.write(imageData);
 							} finally {
 								outputStream.write("\r\n".getBytes());
 								outputStream.flush();
