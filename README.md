@@ -3,9 +3,7 @@
 ## Overview
 The **MJPG Multiplier Server** is a Spring Boot-based application designed to process MJPG (Motion JPEG) streams. It reads an MJPG stream from a configurable source, processes the data, and distributes the frames to multiple consumers via a queue-based mechanism. This project is ideal for scenarios where a single MJPG stream needs to be shared among multiple clients efficiently.
 
-**Restriction:**
-
-The stream must contain the Content-Length header and the header must come last. This behavior can be adapted in the `MjpegInputStreamReaderComponent` class.
+**Restriction:** The stream must contain the Content-Length header and the header must come last. This behavior can be adapted in the `MjpegInputStreamReaderComponent` class.
 
 ## Features
 - **Configurable Input Stream**: The MJPG stream URL is configurable via the `application.properties` file.
@@ -32,8 +30,8 @@ The application requires the MJPG stream URL to be specified in the `application
 ## Build and Run
 * Clone the repository:
 
-        git clone repository-url
-        cd repository-directory```
+        git clone https://github.com/mabakach/mjpg-multiplier.git
+        cd mjpg-multiplier
 * Build the project:
 
         mvn clean install
