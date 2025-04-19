@@ -16,8 +16,7 @@
 	<description>A simple MJPG stream multiplier</description>
 	<scm>
 		<connection>scm:git:https://github.com/mabakach/mjpg-multiplier.git</connection>
-		<developerConnection>
-			scm:git:https://github.com/mabakach/mjpg-multiplier.git</developerConnection>
+		<developerConnection>scm:git:https://github.com/mabakach/mjpg-multiplier.git</developerConnection>
 		<url>https://github.com/mabakach/mjpg-multiplier.git</url>
 	</scm>
 	<properties>
