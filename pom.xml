@@ -9,7 +9,7 @@
 	</parent>
 	<groupId>ch.mabaka.mjpg.multiplier</groupId>
 	<artifactId>mjpg-multiplier-server</artifactId>
-	<version>0.9.0</version>
+	<version>0.9.1-SNAPSHOT</version>
 	<name>mjpg-multiplier-server</name>
 	<description>A simple MJPG stream multiplier</description>
 	<scm>
