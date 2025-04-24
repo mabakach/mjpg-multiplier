@@ -79,6 +79,9 @@
 			                <tag>latest</tag>
 			            </tags>
 			        </to>
+			            <outputPaths>
+					      <tar>${project.build.directory}/${project.artifactId}-${project.version}.tar</tar>
+					    </outputPaths>
 			    </configuration>
 			    <!--
 				<executions>
