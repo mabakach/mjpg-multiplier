@@ -67,7 +67,32 @@
 					<completionGoals>spring-boot:build-image</completionGoals>
 				</configuration>
 			</plugin>
+			<plugin>
+			    <groupId>com.google.cloud.tools</groupId>
+			    <artifactId>jib-maven-plugin</artifactId>
+			    <version>3.4.5</version>
+			    <configuration>
+			        <to>
+			            <image>${project.artifactId}</image>
+			            <tags>
+			                <tag>${project.version}</tag>
+			                <tag>latest</tag>
+			            </tags>
+			        </to>
+			    </configuration>
+			    <!--
+				<executions>
+			        <execution>
+			            <phase>package</phase>
+			            <goals>
+			                <goal>dockerBuild</goal>
+			            </goals>
+			        </execution>
+			    </executions>
+			    -->
+			</plugin>
 		</plugins>
+		
 	</build>
 
 </project>
