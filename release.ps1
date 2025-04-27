@@ -10,6 +10,6 @@ git checkout $RELEASE_TAG
 # Step 3: Build the Docker image tar with the release version
 mvn clean verify jib:buildTar
 
-# Step 4: Switch back to the main branch and perform the release
-git checkout main
+# Step 4: Switch back to the master branch and perform the release
+git checkout master
 mvn release:perform
