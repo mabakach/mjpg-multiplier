@@ -1,2 +1,2 @@
 Remove-Item .\target -Recurse -Force
-mvn release:prepare release:perform
+mvn release:prepare jib:buildTar release:perform
