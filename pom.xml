@@ -64,7 +64,7 @@
 					<tagNameFormat>@{project.version}</tagNameFormat>
 					<releaseProfiles>release</releaseProfiles>
 					<preparationGoals>clean verify</preparationGoals>
-					<completionGoals>spring-boot:build-image</completionGoals>
+					<completionGoals>spring-boot:build-image jib:buildTar</completionGoals>
 				</configuration>
 			</plugin>
 			<plugin>
