@@ -35,6 +35,8 @@ public class MjpegInputStreamReaderComponent {
 	private volatile boolean keepReading = true;
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(StreamController.class);
+	
+	private boolean isBackendStreamAvailable = false;
 
 	@PostConstruct
 	public void init() {
@@ -47,10 +49,12 @@ public class MjpegInputStreamReaderComponent {
 				try (InputStream inputStream = inputStreamProvider.getInputStream()) {
 					final byte[] readBuffer = new byte[1024];
 					int bytesRead;
+					isBackendStreamAvailable = true;
 					while ((bytesRead = inputStream.read(readBuffer)) != -1) {
 						processData(readBuffer, bytesRead); // Custom method to handle the data
 					}
 				} catch (Exception e) {
+					isBackendStreamAvailable = false;
 					System.err.println("Error reading from InputStream: " + e.getMessage());
 					try {
 						// Optional: wait before retrying to avoid excessive retries
@@ -62,6 +66,10 @@ public class MjpegInputStreamReaderComponent {
 				}
 			}
 		});
+	}
+	
+	public boolean isBackendStreamAvailable() {
+		return isBackendStreamAvailable;
 	}
 
 	private void processData(final byte[] readBuffer, final int bytesRead) {
