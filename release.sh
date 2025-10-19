@@ -21,3 +21,10 @@ mvn clean verify jib:buildTar
 
 # Step 5: Return to the original branch
 git checkout $CURRENT_BRANCH
+
+# Step 6: Commit and push pom.xml if modified
+if [[ $(git status --porcelain pom.xml) ]]; then
+  git add pom.xml
+  git commit -m "Update pom.xml to next snapshot version after release"
+  git push
+fi
