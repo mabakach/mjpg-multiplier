@@ -76,18 +76,18 @@
 					<from>
 						<image>eclipse-temurin:17-jre</image>
 						<platforms>
-							<platform>
+							<!--<platform>
 								<architecture>arm</architecture>
 								<os>linux</os>
-							</platform>
+							</platform>-->
 							<platform>
 								<architecture>arm64</architecture>
 								<os>linux</os>
 							</platform>
-							<platform>
+							<!--<platform>
 								<architecture>amd64</architecture>
 								<os>linux</os>
-							</platform>
+							</platform>-->
 						</platforms>
 					</from>
 					<to>
