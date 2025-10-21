@@ -9,7 +9,7 @@
 	</parent>
 	<groupId>ch.mabaka.mjpg.multiplier</groupId>
 	<artifactId>mjpg-multiplier-server</artifactId>
-	<version>1.0.16-SNAPSHOT</version>
+	<version>1.0.16</version>
 	<name>mjpg-multiplier-server</name>
 	<description>A simple MJPG stream multiplier</description>
 	<scm>
@@ -17,7 +17,7 @@
 		<developerConnection>
 			scm:git:https://github.com/mabakach/mjpg-multiplier.git</developerConnection>
 		<!--<url>https://github.com/mabakach/mjpg-multiplier.git</url>-->
-		<tag>1.0.8</tag>
+		<tag>1.0.16</tag>
 	</scm>
 	<properties>
 		<java.version>17</java.version>
