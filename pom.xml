@@ -79,7 +79,6 @@
 							<platform>
 								<architecture>arm</architecture>
 								<os>linux</os>
-								<variant>v7</variant>
 							</platform>
 							<platform>
 								<architecture>arm64</architecture>
