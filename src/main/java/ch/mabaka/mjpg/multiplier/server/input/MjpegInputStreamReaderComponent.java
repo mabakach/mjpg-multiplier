@@ -12,12 +12,15 @@ import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
+import org.springframework.boot.actuate.endpoint.annotation.ReadOperation;
 import org.springframework.stereotype.Component;
 
 import ch.mabaka.mjpg.multiplier.server.rest.StreamController;
 import jakarta.annotation.PostConstruct;
 
 @Component
+@Endpoint(id = "backendStream")
 public class MjpegInputStreamReaderComponent {
 
 	private static final int DATA_BUFFER_SIZE = 1024 * 1024;
@@ -43,6 +46,11 @@ public class MjpegInputStreamReaderComponent {
 		startReading(httpInputStreamProvider);
 	}
 
+	@ReadOperation
+	public boolean backendStreamAvailable() {
+		return isBackendStreamAvailable();
+	}
+
 	public void startReading(final IInputStreamProvider inputStreamProvider) {
 		executorService.submit(() -> {
 			while (keepReading) {
@@ -55,13 +63,13 @@ public class MjpegInputStreamReaderComponent {
 					}
 				} catch (Exception e) {
 					isBackendStreamAvailable = false;
-					System.err.println("Error reading from InputStream: " + e.getMessage());
+					LOGGER.error("Error reading from InputStream: " + e.getMessage());
 					try {
 						// Optional: wait before retrying to avoid excessive retries
 						Thread.sleep(1000);
 					} catch (InterruptedException interruptedException) {
 						Thread.currentThread().interrupt();
-						System.err.println("Thread interrupted: " + interruptedException.getMessage());
+						LOGGER.error("Thread interrupted: " + interruptedException.getMessage());
 					}
 				}
 			}

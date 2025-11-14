@@ -49,6 +49,7 @@ public class StreamController {
 		final StreamingResponseBody bodyStream = new StreamingResponseBody() {
 			@Override
 			public void writeTo(OutputStream outputStream) throws IOException {
+				int nullImageCount = 0;
 				while (true) {
 					try {
 						final byte[] imageData = imageQueue.take();
@@ -61,7 +62,15 @@ public class StreamController {
 							outputStream.write("\r\n".getBytes());
 							outputStream.flush();
 						} else {
-							LOGGER.warn("Image is null");
+							// This should not happen as we are using take(), but just in case
+							Thread.sleep(100);
+							nullImageCount++;
+							LOGGER.warn("Image is null. Null image count: " + nullImageCount);
+							if (nullImageCount >= 100) {	
+								LOGGER.warn("No valid images received for a while. Stop sending data.");
+								outputStream.flush();
+								break;
+							}
 						}
 					} catch (InterruptedException e) {
 						LOGGER.warn("Waiting for image interrupted. Stop sending data.");
@@ -70,6 +79,7 @@ public class StreamController {
 					}
 
 				}
+				imageQueueHolder.removeImageQueueList(imageQueue);
 			}
 		};
 

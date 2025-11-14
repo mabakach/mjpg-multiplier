@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.5.6</version>
+		<version>3.5.7</version>
 		<relativePath /> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>ch.mabaka.mjpg.multiplier</groupId>
@@ -36,14 +36,16 @@
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 
-		<!--
-			<dependency>
+		<!-- Micrometer and Actuator dependencies -->
+		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-docker-compose</artifactId>
-			<scope>runtime</scope>
-			<optional>true</optional>
+			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
-		-->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-core</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
@@ -81,8 +83,8 @@
 								<os>linux</os>
 							</platform>-->
 							<platform>
-								<architecture>arm64</architecture>
-								<os>linux</os>
+						        <architecture>arm64</architecture>
+						        <os>linux</os>
 							</platform>
 							<!--<platform>
 								<architecture>amd64</architecture>
