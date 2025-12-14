@@ -94,6 +94,7 @@ public class MjpegInputStreamReaderComponent {
 				contentLength = Integer.parseInt(contentLengthString.trim());
 			} catch (NumberFormatException nfe) {
 				LOGGER.warn("Could not parse content length: " + contentLength);
+				throw nfe;
 			}
 			if (contentLength > 0) {
 				final int imageDataStart = frameStart + contentLengthPropery.length() + contentLengthString.length() + 4;
