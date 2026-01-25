@@ -41,6 +41,8 @@ public class MjpegInputStreamReaderComponent {
 	
 	private boolean isBackendStreamAvailable = false;
 
+	private static final int MAX_FRAMES_PER_CALL = 10;
+
 	@PostConstruct
 	public void init() {
 		startReading(httpInputStreamProvider);
@@ -81,41 +83,84 @@ public class MjpegInputStreamReaderComponent {
 	}
 
 	private void processData(final byte[] readBuffer, final int bytesRead) {
-		// Implement your logic to handle the data read from the InputStream
 		baos.write(readBuffer, 0, bytesRead);
-		String data = baos.toString(StandardCharsets.UTF_8);
+		byte[] buffer = baos.toByteArray();
+		int searchPos = 0;
+		final String boundary = "--FRAME";
+		final String contentLengthHeader = "Content-Length:";
+		int frameCount = 0;
 
-		final String contentLengthPropery = "Content-Length:";
-		final int frameStart = data.indexOf(contentLengthPropery);
-		if (frameStart > 0) {
-			final String contentLengthString = data.substring(frameStart + contentLengthPropery.length(), data.indexOf("\r\n", frameStart));
-			int contentLength = -1;
-			try {
-				contentLength = Integer.parseInt(contentLengthString.trim());
-			} catch (NumberFormatException nfe) {
-				LOGGER.warn("Could not parse content length: " + contentLength);
-				throw nfe;
+		while (true) {
+			if (++frameCount > MAX_FRAMES_PER_CALL) {
+				LOGGER.warn("processData: Exceeded max frames per call ({}), breaking to avoid infinite loop.", MAX_FRAMES_PER_CALL);
+				break;
 			}
-			if (contentLength > 0) {
-				final int imageDataStart = frameStart + contentLengthPropery.length() + contentLengthString.length() + 4;
-				if (baos.size() >= imageDataStart + contentLength) {
-					// at least one image in the cache
-					final byte[] bytes = baos.toByteArray();
-					final byte[] imageBytes = Arrays.copyOfRange(bytes, imageDataStart, contentLength);
-					for (final BlockingQueue<byte[]> imageQueue : new ArrayList<>(imageQueueHolder.getImageQueueList())) {
-						// new image instance for every queue
-						imageQueue.add(imageBytes);
-						while (imageQueue.size() > 30) {
-							imageQueue.poll();
-						}
-					}
-
-					// reset baos
-					baos = new ByteArrayOutputStream(DATA_BUFFER_SIZE);
-					baos.write(bytes, imageDataStart + contentLength, bytes.length - (imageDataStart + contentLength));
+			// Find boundary
+			int boundaryIndex = indexOf(buffer, boundary.getBytes(StandardCharsets.UTF_8), searchPos);
+			if (boundaryIndex == -1) {
+				break; // No complete frame boundary found
+			}
+			// Find header end (\r\n\r\n)
+			int headerEnd = indexOf(buffer, "\r\n\r\n".getBytes(StandardCharsets.UTF_8), boundaryIndex);
+			if (headerEnd == -1) {
+				break; // Incomplete header
+			}
+			// Extract header
+			String header = new String(buffer, boundaryIndex, headerEnd - boundaryIndex, StandardCharsets.UTF_8);
+			// Find Content-Length
+			int clIndex = header.indexOf(contentLengthHeader);
+			if (clIndex == -1) {
+				searchPos = headerEnd + 4;
+				continue; // No Content-Length, skip to next
+			}
+			int clLineEnd = header.indexOf("\r\n", clIndex);
+			if (clLineEnd == -1) {
+				break; // Incomplete header line
+			}
+			String contentLengthString = header.substring(clIndex + contentLengthHeader.length(), clLineEnd).trim();
+			int contentLength;
+			try {
+				contentLength = Integer.parseInt(contentLengthString);
+			} catch (NumberFormatException nfe) {
+				LOGGER.warn("Could not parse content length: {}", contentLengthString);
+				searchPos = headerEnd + 4;
+				continue; // Skip this frame
+			}
+			// Image data starts after header end
+			int imageDataStart = headerEnd + 4;
+			if (buffer.length < imageDataStart + contentLength) {
+				break; // Not enough data yet
+			}
+			// Extract image
+			byte[] imageBytes = Arrays.copyOfRange(buffer, imageDataStart, imageDataStart + contentLength);
+			for (final BlockingQueue<byte[]> imageQueue : new ArrayList<>(imageQueueHolder.getImageQueueList())) {
+				imageQueue.add(imageBytes);
+				while (imageQueue.size() > 30) {
+					imageQueue.poll();
 				}
 			}
+			// Move search position forward
+			searchPos = imageDataStart + contentLength;
 		}
+		// Remove processed data from baos
+		if (searchPos > 0) {
+			byte[] remaining = Arrays.copyOfRange(buffer, searchPos, buffer.length);
+			baos = new ByteArrayOutputStream(DATA_BUFFER_SIZE);
+			baos.write(remaining, 0, remaining.length);
+		}
+	}
+
+	// Helper: find index of byte pattern in byte array
+	private int indexOf(byte[] data, byte[] pattern, int start) {
+		outer: for (int i = start; i <= data.length - pattern.length; i++) {
+			for (int j = 0; j < pattern.length; j++) {
+				if (data[i + j] != pattern[j]) {
+					continue outer;
+				}
+			}
+			return i;
+		}
+		return -1;
 	}
 
 	public void stopReading() {
