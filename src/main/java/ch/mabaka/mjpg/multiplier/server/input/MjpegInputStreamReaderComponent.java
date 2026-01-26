@@ -83,8 +83,10 @@ public class MjpegInputStreamReaderComponent {
 	}
 
 	private void processData(final byte[] readBuffer, final int bytesRead) {
+		LOGGER.debug("processData called: bytesRead={}, bufferSizeBeforeWrite={}", bytesRead, baos.size());
 		baos.write(readBuffer, 0, bytesRead);
 		byte[] buffer = baos.toByteArray();
+		LOGGER.debug("Buffer size after write: {}", buffer.length);
 		int searchPos = 0;
 		final String boundary = "--FRAME";
 		final String contentLengthHeader = "Content-Length:";
@@ -95,58 +97,62 @@ public class MjpegInputStreamReaderComponent {
 				LOGGER.warn("processData: Exceeded max frames per call ({}), breaking to avoid infinite loop.", MAX_FRAMES_PER_CALL);
 				break;
 			}
-			// Find boundary
 			int boundaryIndex = indexOf(buffer, boundary.getBytes(StandardCharsets.UTF_8), searchPos);
 			if (boundaryIndex == -1) {
-				break; // No complete frame boundary found
+				LOGGER.info("No boundary found from searchPos {}. Breaking.", searchPos);
+				break;
 			}
-			// Find header end (\r\n\r\n)
+			LOGGER.debug("Boundary found at {}", boundaryIndex);
 			int headerEnd = indexOf(buffer, "\r\n\r\n".getBytes(StandardCharsets.UTF_8), boundaryIndex);
 			if (headerEnd == -1) {
-				break; // Incomplete header
+				LOGGER.info("Incomplete header after boundary at {}. Breaking.", boundaryIndex);
+				break;
 			}
-			// Extract header
 			String header = new String(buffer, boundaryIndex, headerEnd - boundaryIndex, StandardCharsets.UTF_8);
-			// Find Content-Length
+			LOGGER.debug("Header found: {}", header.replaceAll("\r\n", "|"));
 			int clIndex = header.indexOf(contentLengthHeader);
 			if (clIndex == -1) {
+				LOGGER.info("No Content-Length found in header. Skipping to next.");
 				searchPos = headerEnd + 4;
-				continue; // No Content-Length, skip to next
+				continue;
 			}
 			int clLineEnd = header.indexOf("\r\n", clIndex);
 			if (clLineEnd == -1) {
-				break; // Incomplete header line
+				LOGGER.info("Incomplete Content-Length line in header. Breaking.");
+				break;
 			}
 			String contentLengthString = header.substring(clIndex + contentLengthHeader.length(), clLineEnd).trim();
 			int contentLength;
 			try {
 				contentLength = Integer.parseInt(contentLengthString);
+				LOGGER.info("Parsed Content-Length: {}", contentLength);
 			} catch (NumberFormatException nfe) {
 				LOGGER.warn("Could not parse content length: {}", contentLengthString);
 				searchPos = headerEnd + 4;
-				continue; // Skip this frame
+				continue;
 			}
-			// Image data starts after header end
 			int imageDataStart = headerEnd + 4;
 			if (buffer.length < imageDataStart + contentLength) {
-				break; // Not enough data yet
+				LOGGER.info("Not enough data for image: buffer.length={}, needed={}. Breaking.", buffer.length, imageDataStart + contentLength);
+				break;
 			}
-			// Extract image
 			byte[] imageBytes = Arrays.copyOfRange(buffer, imageDataStart, imageDataStart + contentLength);
+			LOGGER.debug("Extracted imageBytes: {} bytes, adding to queues.", imageBytes.length);
 			for (final BlockingQueue<byte[]> imageQueue : new ArrayList<>(imageQueueHolder.getImageQueueList())) {
 				imageQueue.add(imageBytes);
 				while (imageQueue.size() > 30) {
 					imageQueue.poll();
 				}
 			}
-			// Move search position forward
 			searchPos = imageDataStart + contentLength;
 		}
-		// Remove processed data from baos
 		if (searchPos > 0) {
+			LOGGER.debug("Processed up to searchPos {}. Trimming buffer.", searchPos);
 			byte[] remaining = Arrays.copyOfRange(buffer, searchPos, buffer.length);
 			baos = new ByteArrayOutputStream(DATA_BUFFER_SIZE);
 			baos.write(remaining, 0, remaining.length);
+		} else {
+			LOGGER.info("No data processed in this call.");
 		}
 	}
 
