@@ -41,8 +41,6 @@ public class MjpegInputStreamReaderComponent {
 	
 	private boolean isBackendStreamAvailable = false;
 
-	private static final int MAX_FRAMES_PER_CALL = 10;
-
 	@PostConstruct
 	public void init() {
 		startReading(httpInputStreamProvider);
@@ -65,7 +63,8 @@ public class MjpegInputStreamReaderComponent {
 					}
 				} catch (Exception e) {
 					isBackendStreamAvailable = false;
-					LOGGER.error("Error reading from InputStream: " + e.getMessage());
+					LOGGER.error("Error reading from InputStream: " + e.getClass().getName() + " " + e.getMessage());
+					LOGGER.debug("Stack trace: ", e);
 					try {
 						// Optional: wait before retrying to avoid excessive retries
 						Thread.sleep(1000);
@@ -83,102 +82,37 @@ public class MjpegInputStreamReaderComponent {
 	}
 
 	private void processData(final byte[] readBuffer, final int bytesRead) {
-		LOGGER.debug("processData called: bytesRead={}, bufferSizeBeforeWrite={}", bytesRead, baos.size());
 		baos.write(readBuffer, 0, bytesRead);
-		byte[] buffer = baos.toByteArray();
-		LOGGER.debug("Buffer size after write: {}", buffer.length);
-		int searchPos = 0;
-		final String boundary = "--FRAME";
-		final String contentLengthHeader = "Content-Length:";
-		int frameCount = 0;
+		String data = baos.toString(StandardCharsets.UTF_8);
 
-		while (true) {
-			if (++frameCount > MAX_FRAMES_PER_CALL) {
-				LOGGER.warn("processData: Exceeded max frames per call ({}), breaking to avoid infinite loop.", MAX_FRAMES_PER_CALL);
-				break;
-			}
-			int boundaryIndex = indexOf(buffer, boundary.getBytes(StandardCharsets.UTF_8), searchPos);
-			if (boundaryIndex == -1) {
-				LOGGER.info("No boundary found from searchPos {}. Breaking.", searchPos);
-				break;
-			}
-			LOGGER.debug("Boundary found at {}", boundaryIndex);
-			// Find header end: support both \r\n\r\n and \n\n
-			int headerEnd = indexOf(buffer, "\r\n\r\n".getBytes(StandardCharsets.UTF_8), boundaryIndex);
-			int headerEndLen = 4;
-			if (headerEnd == -1) {
-				headerEnd = indexOf(buffer, "\n\n".getBytes(StandardCharsets.UTF_8), boundaryIndex);
-				headerEndLen = 2;
-			}
-			if (headerEnd == -1) {
-				LOGGER.info("Incomplete header after boundary at {}. Breaking.", boundaryIndex);
-				break;
-			}
-			String header = new String(buffer, boundaryIndex, headerEnd - boundaryIndex, StandardCharsets.UTF_8);
-			LOGGER.debug("Header found: {}", header.replaceAll("\r\n", "|").replaceAll("\n", "|"));
-			int clIndex = header.indexOf(contentLengthHeader);
-			if (clIndex == -1) {
-				LOGGER.info("No Content-Length found in header. Skipping to next.");
-				searchPos = headerEnd + headerEndLen;
-				continue;
-			}
-			// Find end of Content-Length line: support both \r\n and \n
-			int clLineEnd = header.indexOf("\r\n", clIndex);
-			int clLineEndLen = 2;
-			if (clLineEnd == -1) {
-				clLineEnd = header.indexOf("\n", clIndex);
-				clLineEndLen = 1;
-			}
-			if (clLineEnd == -1) {
-				LOGGER.info("Incomplete Content-Length line in header. Breaking.");
-				break;
-			}
-			String contentLengthString = header.substring(clIndex + contentLengthHeader.length(), clLineEnd).trim();
-			int contentLength;
+		final String contentLengthProperty = "Content-Length:";
+		final int frameStart = data.indexOf(contentLengthProperty);
+		if (frameStart > 0) {
+			final String contentLengthString = data.substring(frameStart + contentLengthProperty.length(), data.indexOf("\r\n", frameStart));
+			int contentLength = -1;
 			try {
-				contentLength = Integer.parseInt(contentLengthString);
-				LOGGER.info("Parsed Content-Length: {}", contentLength);
+				contentLength = Integer.parseInt(contentLengthString.trim());
 			} catch (NumberFormatException nfe) {
-				LOGGER.warn("Could not parse content length: {}", contentLengthString);
-				searchPos = headerEnd + headerEndLen;
-				continue;
+				LOGGER.warn("Could not parse content length: " + contentLengthString);
+				throw nfe;
 			}
-			int imageDataStart = headerEnd + headerEndLen;
-			if (buffer.length < imageDataStart + contentLength) {
-				LOGGER.info("Not enough data for image: buffer.length={}, needed={}. Breaking.", buffer.length, imageDataStart + contentLength);
-				break;
-			}
-			byte[] imageBytes = Arrays.copyOfRange(buffer, imageDataStart, imageDataStart + contentLength);
-			LOGGER.debug("Extracted imageBytes: {} bytes, adding to queues.", imageBytes.length);
-			for (final BlockingQueue<byte[]> imageQueue : new ArrayList<>(imageQueueHolder.getImageQueueList())) {
-				imageQueue.add(imageBytes);
-				while (imageQueue.size() > 30) {
-					imageQueue.poll();
+			if (contentLength > 0) {
+				final int imageDataStart = frameStart + contentLengthProperty.length() + contentLengthString.length() + 4;
+				if (baos.size() >= imageDataStart + contentLength) {
+					final byte[] bytes = baos.toByteArray();
+					final byte[] imageBytes = Arrays.copyOfRange(bytes, imageDataStart, imageDataStart + contentLength);
+					for (final BlockingQueue<byte[]> imageQueue : new ArrayList<>(imageQueueHolder.getImageQueueList())) {
+						imageQueue.add(imageBytes);
+						while (imageQueue.size() > 30) {
+							imageQueue.poll();
+						}
+					}
+					// reset baos
+					baos = new ByteArrayOutputStream(DATA_BUFFER_SIZE);
+					baos.write(bytes, imageDataStart + contentLength, bytes.length - (imageDataStart + contentLength));
 				}
 			}
-			searchPos = imageDataStart + contentLength;
 		}
-		if (searchPos > 0) {
-			LOGGER.debug("Processed up to searchPos {}. Trimming buffer.", searchPos);
-			byte[] remaining = Arrays.copyOfRange(buffer, searchPos, buffer.length);
-			baos = new ByteArrayOutputStream(DATA_BUFFER_SIZE);
-			baos.write(remaining, 0, remaining.length);
-		} else {
-			LOGGER.info("No data processed in this call.");
-		}
-	}
-
-	// Helper: find index of byte pattern in byte array
-	private int indexOf(byte[] data, byte[] pattern, int start) {
-		outer: for (int i = start; i <= data.length - pattern.length; i++) {
-			for (int j = 0; j < pattern.length; j++) {
-				if (data[i + j] != pattern[j]) {
-					continue outer;
-				}
-			}
-			return i;
-		}
-		return -1;
 	}
 
 	public void stopReading() {
