@@ -103,20 +103,32 @@ public class MjpegInputStreamReaderComponent {
 				break;
 			}
 			LOGGER.debug("Boundary found at {}", boundaryIndex);
+			// Find header end: support both \r\n\r\n and \n\n
 			int headerEnd = indexOf(buffer, "\r\n\r\n".getBytes(StandardCharsets.UTF_8), boundaryIndex);
+			int headerEndLen = 4;
+			if (headerEnd == -1) {
+				headerEnd = indexOf(buffer, "\n\n".getBytes(StandardCharsets.UTF_8), boundaryIndex);
+				headerEndLen = 2;
+			}
 			if (headerEnd == -1) {
 				LOGGER.info("Incomplete header after boundary at {}. Breaking.", boundaryIndex);
 				break;
 			}
 			String header = new String(buffer, boundaryIndex, headerEnd - boundaryIndex, StandardCharsets.UTF_8);
-			LOGGER.debug("Header found: {}", header.replaceAll("\r\n", "|"));
+			LOGGER.debug("Header found: {}", header.replaceAll("\r\n", "|").replaceAll("\n", "|"));
 			int clIndex = header.indexOf(contentLengthHeader);
 			if (clIndex == -1) {
 				LOGGER.info("No Content-Length found in header. Skipping to next.");
-				searchPos = headerEnd + 4;
+				searchPos = headerEnd + headerEndLen;
 				continue;
 			}
+			// Find end of Content-Length line: support both \r\n and \n
 			int clLineEnd = header.indexOf("\r\n", clIndex);
+			int clLineEndLen = 2;
+			if (clLineEnd == -1) {
+				clLineEnd = header.indexOf("\n", clIndex);
+				clLineEndLen = 1;
+			}
 			if (clLineEnd == -1) {
 				LOGGER.info("Incomplete Content-Length line in header. Breaking.");
 				break;
@@ -128,10 +140,10 @@ public class MjpegInputStreamReaderComponent {
 				LOGGER.info("Parsed Content-Length: {}", contentLength);
 			} catch (NumberFormatException nfe) {
 				LOGGER.warn("Could not parse content length: {}", contentLengthString);
-				searchPos = headerEnd + 4;
+				searchPos = headerEnd + headerEndLen;
 				continue;
 			}
-			int imageDataStart = headerEnd + 4;
+			int imageDataStart = headerEnd + headerEndLen;
 			if (buffer.length < imageDataStart + contentLength) {
 				LOGGER.info("Not enough data for image: buffer.length={}, needed={}. Breaking.", buffer.length, imageDataStart + contentLength);
 				break;
