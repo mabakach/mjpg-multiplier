@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import ch.mabaka.mjpg.multiplier.server.mystrom.MyStromClient;
 
 import ch.mabaka.mjpg.multiplier.server.rest.StreamController;
 
@@ -21,9 +22,11 @@ public class HttpInputStreamProvider implements IInputStreamProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamController.class);
     
     private final String url;
+    private final MyStromClient myStromClient;
 
-    public HttpInputStreamProvider(@Value("${stream.url}") String url) {
+    public HttpInputStreamProvider(@Value("${stream.url}") String url, MyStromClient myStromClient) {
         this.url = url;
+        this.myStromClient = myStromClient;
     }
 
     @Override
@@ -47,6 +50,19 @@ public class HttpInputStreamProvider implements IInputStreamProvider {
             }
         } catch (Exception e) {
             LOGGER.error("DNS or socket connection failed for {}:{} - {}", host, port, e.toString(), e);
+            // Only trigger powerCycle if the exception indicates the camera is not reachable
+            try {
+                if (isUnreachable(e)) {
+                    boolean triggered = myStromClient.tryPowerCycleIfAllowed();
+                    if (triggered) {
+                        LOGGER.info("Triggered myStrom powerCycle due to socket/DNS failure for {}", host);
+                    }
+                } else {
+                    LOGGER.info("Socket/DNS failure does not indicate unreachable device; skipping powerCycle for {}", host);
+                }
+            } catch (Exception ex) {
+                LOGGER.error("Error while attempting myStrom powerCycle: {}", ex.toString(), ex);
+            }
             throw e;
         }
 
@@ -79,8 +95,45 @@ public class HttpInputStreamProvider implements IInputStreamProvider {
             } catch (Exception ex) {
                 // ignore
             }
+            // Try power cycle if allowed, but only when the exception indicates the camera is unreachable
+            try {
+                if (isUnreachable(e)) {
+                    boolean triggered = myStromClient.tryPowerCycleIfAllowed();
+                    if (triggered) {
+                        LOGGER.info("Triggered myStrom powerCycle due to stream connection failure for URL {}", url);
+                    }
+                } else {
+                    LOGGER.info("Stream connection failed but does not indicate unreachable device; skipping powerCycle for URL {}", url);
+                }
+            } catch (Exception ex) {
+                LOGGER.error("Error while attempting myStrom powerCycle: {}", ex.toString(), ex);
+            }
             throw e;
         }
+    }
+
+    // Inspect exception and its causes to determine if it represents an unreachable device
+    private static boolean isUnreachable(Throwable t) {
+        Throwable cur = t;
+        while (cur != null) {
+            if (cur instanceof java.net.UnknownHostException
+                    || cur instanceof java.net.ConnectException
+                    || cur instanceof java.net.NoRouteToHostException
+                    || cur instanceof java.net.SocketTimeoutException
+                    || cur instanceof java.net.SocketException
+                    || cur instanceof java.io.EOFException) {
+                return true;
+            }
+            String msg = cur.getMessage();
+            if (msg != null) {
+                String m = msg.toLowerCase();
+                if (m.contains("refused") || m.contains("timed out") || m.contains("connection reset") || m.contains("no route to host") || m.contains("unreachable")) {
+                    return true;
+                }
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
     // Wrapper that disconnects the HttpURLConnection when the stream is closed
