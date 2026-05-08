@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Component;
 public class MyStromClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MyStromClient.class);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
     private final HttpClient httpClient;
     private final URI baseUri;
@@ -32,20 +34,39 @@ public class MyStromClient {
     private final String statePath;
     private final String actionPath;
     private final String setRelayPath;
+    private final Duration powerCycleFallbackOffDuration;
 
+    @Autowired
     public MyStromClient(
             @Value("${mystrom.baseUrl:http://192.168.5.134}") String baseUrl,
             @Value("${mystrom.statePath:/report}") String statePath,
             @Value("${mystrom.actionPath:/power_cycle?time=10}") String actionPath,
-            @Value("${mystrom.setRelayPath:/relay}") String setRelayPath) {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .build();
-        this.baseUri = URI.create(baseUrl);
+            @Value("${mystrom.setRelayPath:/relay}") String setRelayPath,
+            @Value("${mystrom.powerCycleFallbackOffDuration:10s}") Duration powerCycleFallbackOffDuration) {
+        this(HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .build(),
+                URI.create(baseUrl),
+                statePath,
+                actionPath,
+                setRelayPath,
+                powerCycleFallbackOffDuration);
+        LOGGER.info("MyStromClient configured for {}", baseUrl);
+    }
+
+    MyStromClient(
+            HttpClient httpClient,
+            URI baseUri,
+            String statePath,
+            String actionPath,
+            String setRelayPath,
+            Duration powerCycleFallbackOffDuration) {
+        this.httpClient = httpClient;
+        this.baseUri = baseUri;
         this.statePath = statePath;
         this.actionPath = actionPath;
         this.setRelayPath = setRelayPath;
-        LOGGER.info("MyStromClient configured for {}", baseUrl);
+        this.powerCycleFallbackOffDuration = powerCycleFallbackOffDuration;
     }
 
     // Poll every minute
@@ -77,13 +98,8 @@ public class MyStromClient {
 
     private boolean getRelayStateInternal() throws Exception {
         URI uri = baseUri.resolve(statePath);
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(uri)
-                .timeout(Duration.ofSeconds(5))
-                .GET()
-                .build();
         LOGGER.debug("Requesting myStrom state from {}", uri);
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = sendGet(uri, Duration.ofSeconds(5));
         LOGGER.debug("myStrom state response status: {}", resp.statusCode());
         if (resp.statusCode() != 200) {
             throw new Exception("myStrom API returned " + resp.statusCode());
@@ -139,13 +155,13 @@ public class MyStromClient {
         LOGGER.info("Relay is true; requesting power_cycle via {}", actionPath);
         URI uri = baseUri.resolve(actionPath);
         LOGGER.debug("Sending power_cycle request to {}", uri);
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(uri)
-                .timeout(Duration.ofSeconds(10))
-                .GET()
-                .build();
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = sendGet(uri, REQUEST_TIMEOUT);
         LOGGER.debug("power_cycle response status: {}, body: {}", resp.statusCode(), resp.body());
+        if (resp.statusCode() == 404) {
+            LOGGER.warn("power_cycle endpoint {} returned 404; falling back to manual relay cycle.", uri);
+            manualPowerCycle();
+            return;
+        }
         if (resp.statusCode() / 100 != 2) {
             throw new Exception("Failed to power cycle myStrom switch: " + resp.statusCode());
         }
@@ -156,16 +172,40 @@ public class MyStromClient {
         String path = setRelayPath + "?state=" + (on ? "1" : "0");
         URI uri = baseUri.resolve(path);
         LOGGER.debug("Setting relay state via {}", uri);
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(uri)
-                .timeout(Duration.ofSeconds(10))
-                .GET()
-                .build();
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = sendGet(uri, REQUEST_TIMEOUT);
         LOGGER.debug("setRelayState response status: {}, body: {}", resp.statusCode(), resp.body());
         if (resp.statusCode() / 100 != 2) {
             throw new Exception("Failed to set relay state on myStrom switch: " + resp.statusCode());
         }
         LOGGER.info("Set relay state to {} (response {})", on, resp.statusCode());
+    }
+
+    private void manualPowerCycle() throws Exception {
+        LOGGER.info("Falling back to manual relay power cycle via {}", setRelayPath);
+        setRelayState(false);
+        waitForRelayToRemainOff();
+        setRelayState(true);
+        LOGGER.info("Completed manual relay power cycle with off duration {}", powerCycleFallbackOffDuration);
+    }
+
+    private void waitForRelayToRemainOff() throws Exception {
+        if (powerCycleFallbackOffDuration.isZero() || powerCycleFallbackOffDuration.isNegative()) {
+            return;
+        }
+        try {
+            Thread.sleep(powerCycleFallbackOffDuration.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new Exception("Interrupted while waiting to restore myStrom relay power", e);
+        }
+    }
+
+    private HttpResponse<String> sendGet(URI uri, Duration timeout) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(uri)
+                .timeout(timeout)
+                .GET()
+                .build();
+        return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
     }
 }
