@@ -61,6 +61,7 @@ public class MjpegInputStreamReaderComponent {
 				try (InputStream inputStream = inputStreamProvider.getInputStream()) {
 					final byte[] readBuffer = new byte[1024];
 					int bytesRead;
+					baos = new ByteArrayOutputStream(DATA_BUFFER_SIZE); // drop partial frame from previous connection
 					isBackendStreamAvailable = true;
 					while ((bytesRead = inputStream.read(readBuffer)) != -1) {
 						processData(readBuffer, bytesRead); // Custom method to handle the data
@@ -135,6 +136,10 @@ public class MjpegInputStreamReaderComponent {
 				break;
 			} 
 			index++;
+		}
+		// header split across reads: wait for more data instead of failing
+		if (contentLength.length() == 0 || index >= data.length()) {
+			return new FrameHeader(0, index);
 		}
 		try	{
 			return new FrameHeader(Integer.parseInt(contentLength.toString()), index);
